@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MindSpace — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0f;--surface:#111118;--surface2:#16161f;--surface3:#1c1c28;
+  --border:#ffffff0f;--border2:#ffffff1a;
+  --accent:#7c6af7;--accent2:#a78bfa;--accent3:#c4b5fd;
+  --green:#34d399;--red:#f87171;--amber:#fbbf24;--blue:#60a5fa;
+  --text:#f0eeff;--text2:#9990bb;--text3:#5c5580;
+  --mono:'DM Mono',monospace;
+}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;font-weight:300;display:flex;height:100vh;overflow:hidden}
+
+/* ── SIDEBAR ── */
+#sidebar{width:220px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;padding:0}
+.sb-logo{padding:28px 20px 20px;border-bottom:1px solid var(--border)}
+.sb-logo h1{font-family:'Syne',sans-serif;font-size:1.1rem;font-weight:700;color:var(--text);letter-spacing:-.02em}
+.sb-logo span{font-size:.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;font-family:var(--mono)}
+.sb-nav{flex:1;padding:12px 8px;display:flex;flex-direction:column;gap:2px}
+.sb-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;cursor:pointer;font-size:.83rem;color:var(--text2);transition:all .15s;border:1px solid transparent;font-weight:400}
+.sb-item:hover{background:var(--surface2);color:var(--text)}
+.sb-item.active{background:var(--surface3);color:var(--accent3);border-color:var(--border2)}
+.sb-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
+.sb-item.active .icon{opacity:1}
+.sb-divider{height:1px;background:var(--border);margin:8px 12px}
+.sb-bottom{padding:12px 8px 16px}
+.sb-user{padding:10px 12px;border-radius:8px;background:var(--surface2);border:1px solid var(--border)}
+.sb-user-name{font-size:.8rem;font-weight:500;color:var(--text);margin-bottom:2px}
+.sb-user-role{font-size:.7rem;color:var(--text3);font-family:var(--mono)}
+
+/* ── MAIN ── */
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{padding:16px 28px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--surface);flex-shrink:0}
+.topbar h2{font-family:'Syne',sans-serif;font-size:1.1rem;font-weight:600;letter-spacing:-.02em}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.badge{font-size:.7rem;font-family:var(--mono);padding:4px 10px;border-radius:20px;background:var(--surface3);border:1px solid var(--border2);color:var(--text2)}
+.btn-logout{background:none;border:1px solid var(--border2);border-radius:8px;padding:6px 14px;color:var(--text2);font-family:'DM Sans',sans-serif;font-size:.78rem;cursor:pointer;transition:all .15s}
+.btn-logout:hover{border-color:var(--red);color:var(--red)}
+
+/* ── CONTENT ── */
+#content{flex:1;overflow-y:auto;padding:24px 28px}
+#content::-webkit-scrollbar{width:4px}
+#content::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+.page{display:none}
+.page.active{display:block;animation:fadeIn .2s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── STAT CARDS ── */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 20px;position:relative;overflow:hidden}
+.stat-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.stat-card.purple::before{background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.stat-card.green::before{background:linear-gradient(90deg,var(--green),#6ee7b7)}
+.stat-card.blue::before{background:linear-gradient(90deg,var(--blue),#93c5fd)}
+.stat-card.amber::before{background:linear-gradient(90deg,var(--amber),#fde68a)}
+.stat-label{font-size:.7rem;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-family:var(--mono);margin-bottom:10px}
+.stat-value{font-family:'Syne',sans-serif;font-size:2rem;font-weight:700;line-height:1;color:var(--text);margin-bottom:4px}
+.stat-sub{font-size:.72rem;color:var(--text3)}
+
+/* ── CHARTS ── */
+.charts-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:24px}
+.chart-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px}
+.chart-title{font-size:.8rem;font-weight:500;color:var(--text2);margin-bottom:16px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em}
+.chart-wrap{position:relative;height:200px}
+
+/* ── TABLES ── */
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.section-title{font-size:.8rem;font-weight:500;color:var(--text2);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em}
+.table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:20px}
+table{width:100%;border-collapse:collapse}
+th{font-size:.68rem;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;padding:10px 16px;border-bottom:1px solid var(--border);text-align:left;font-weight:400;background:var(--surface2)}
+td{font-size:.8rem;color:var(--text2);padding:11px 16px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--surface2);color:var(--text)}
+td.mono{font-family:var(--mono);font-size:.72rem;color:var(--text3)}
+.pill{display:inline-block;font-size:.65rem;font-family:var(--mono);padding:2px 8px;border-radius:20px;border:1px solid}
+.pill.active{color:var(--green);border-color:#34d39933;background:#34d3990d}
+.pill.inactive{color:var(--red);border-color:#f8717133;background:#f871710d}
+.pill.user{color:var(--blue);border-color:#60a5fa33;background:#60a5fa0d}
+.pill.admin{color:var(--accent2);border-color:#a78bfa33;background:#a78bfa0d}
+
+/* ── EMOTION MINI BARS ── */
+.emo-bars{display:flex;gap:3px;align-items:flex-end;height:24px}
+.emo-bar-mini{width:6px;border-radius:2px;background:var(--accent);opacity:.6;min-height:2px;transition:opacity .2s}
+.emo-bar-mini:hover{opacity:1}
+
+/* ── DETAIL PANEL ── */
+#detail-panel{position:fixed;right:0;top:0;bottom:0;width:480px;background:var(--surface);border-left:1px solid var(--border);z-index:100;transform:translateX(100%);transition:transform .25s ease;overflow-y:auto;display:flex;flex-direction:column}
+#detail-panel.open{transform:translateX(0)}
+.panel-header{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;position:sticky;top:0;background:var(--surface);z-index:1}
+.panel-title{font-family:'Syne',sans-serif;font-size:1rem;font-weight:600}
+.btn-close{background:none;border:1px solid var(--border2);border-radius:8px;width:32px;height:32px;cursor:pointer;color:var(--text2);font-size:1rem;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.btn-close:hover{border-color:var(--red);color:var(--red)}
+.panel-body{padding:20px 24px;flex:1}
+.info-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)}
+.info-row:last-child{border-bottom:none}
+.info-key{font-size:.72rem;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em}
+.info-val{font-size:.82rem;color:var(--text);font-family:var(--mono)}
+.section-sub{font-size:.72rem;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.05em;margin:16px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.emo-panel-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px}
+.emo-cell{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 10px}
+.emo-cell-name{font-size:.62rem;color:var(--text3);font-family:var(--mono);text-transform:uppercase;margin-bottom:4px}
+.emo-cell-bar{height:4px;border-radius:2px;background:var(--border2);margin-bottom:4px}
+.emo-cell-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .4s ease}
+.emo-cell-val{font-size:.7rem;color:var(--text);font-family:var(--mono)}
+
+/* ── PAGINATION ── */
+.pagination{display:flex;gap:6px;justify-content:flex-end;margin-top:10px}
+.pg-btn{background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:4px 12px;color:var(--text2);font-size:.75rem;cursor:pointer;font-family:var(--mono);transition:all .15s}
+.pg-btn:hover{border-color:var(--accent);color:var(--accent)}
+.pg-btn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+
+/* ── SEARCH ── */
+.search-bar{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px 14px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:.82rem;width:240px;outline:none;transition:border-color .15s}
+.search-bar::placeholder{color:var(--text3)}
+.search-bar:focus{border-color:var(--accent)}
+
+/* ── LOGIN ── */
+#login-screen{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:999}
+.login-card{width:360px;background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:36px 32px}
+.login-card h1{font-family:'Syne',sans-serif;font-size:1.4rem;font-weight:700;margin-bottom:4px}
+.login-card p{font-size:.8rem;color:var(--text3);margin-bottom:28px;font-family:var(--mono)}
+.field{margin-bottom:16px}
+.field label{display:block;font-size:.72rem;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+.field input{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:.88rem;outline:none;transition:border-color .15s}
+.field input:focus{border-color:var(--accent)}
+.btn-login{width:100%;background:var(--accent);border:none;border-radius:10px;padding:12px;color:#fff;font-family:'Syne',sans-serif;font-size:.9rem;font-weight:600;cursor:pointer;margin-top:8px;transition:opacity .15s;letter-spacing:.02em}
+.btn-login:hover{opacity:.85}
+.login-error{font-size:.75rem;color:var(--red);margin-top:10px;font-family:var(--mono);display:none}
+
+/* ── OVERLAY ── */
+#overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:99;display:none}
+#overlay.show{display:block}
+
+/* ── TOAST ── */
+#toast{position:fixed;bottom:24px;right:24px;background:var(--surface3);border:1px solid var(--border2);border-radius:10px;padding:12px 18px;font-size:.8rem;color:var(--text);font-family:var(--mono);z-index:200;transform:translateY(60px);opacity:0;transition:all .25s}
+#toast.show{transform:translateY(0);opacity:1}
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div class="login-card">
+    <h1>MindSpace</h1>
+    <p>admin / console</p>
+    <div class="field"><label>Email</label><input type="email" id="login-email" placeholder="admin@mindspace.io" autocomplete="off"/></div>
+    <div class="field"><label>Password</label><input type="password" id="login-pass" placeholder="••••••••"/></div>
+    <button class="btn-login" onclick="doLogin()">Sign in →</button>
+    <div class="login-error" id="login-err">Invalid credentials</div>
+  </div>
+</div>
+
+<div id="overlay" onclick="closePanel()"></div>
+<div id="toast"></div>
+
+<div id="sidebar">
+  <div class="sb-logo">
+    <h1>MindSpace</h1>
+    <span>Admin Console</span>
+  </div>
+  <nav class="sb-nav">
+    <div class="sb-item active" onclick="showPage('overview')" id="nav-overview">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+      Overview
+    </div>
+    <div class="sb-item" onclick="showPage('users')" id="nav-users">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      Users
+    </div>
+    <div class="sb-item" onclick="showPage('conversations')" id="nav-conversations">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      Conversations
+    </div>
+  </nav>
+  <div class="sb-divider"></div>
+  <div class="sb-bottom">
+    <div class="sb-user">
+      <div class="sb-user-name" id="admin-name">Admin</div>
+      <div class="sb-user-role">administrator</div>
+    </div>
+    <div class="sb-item" onclick="logout()" style="margin-top:6px;color:var(--text3)">
+      <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      Sign out
+    </div>
+  </div>
+</div>
+
+<div id="main">
+  <div class="topbar">
+    <h2 id="page-title">Overview</h2>
+    <div class="topbar-right">
+      <span class="badge" id="topbar-time"></span>
+    </div>
+  </div>
+
+  <div id="content">
+
+    <!-- OVERVIEW -->
+    <div class="page active" id="page-overview">
+      <div class="stats-grid">
+        <div class="stat-card purple">
+          <div class="stat-label">Total Users</div>
+          <div class="stat-value" id="s-users">—</div>
+          <div class="stat-sub">registered accounts</div>
+        </div>
+        <div class="stat-card green">
+          <div class="stat-label">Active Users</div>
+          <div class="stat-value" id="s-active">—</div>
+          <div class="stat-sub">currently enabled</div>
+        </div>
+        <div class="stat-card blue">
+          <div class="stat-label">Conversations</div>
+          <div class="stat-value" id="s-convs">—</div>
+          <div class="stat-sub">total sessions</div>
+        </div>
+        <div class="stat-card amber">
+          <div class="stat-label">Crisis Flags</div>
+          <div class="stat-value" id="s-crisis">—</div>
+          <div class="stat-sub">flagged messages</div>
+        </div>
+      </div>
+
+      <div class="charts-row">
+        <div class="chart-card">
+          <div class="chart-title">Emotion distribution — all users</div>
+          <div class="chart-wrap"><canvas id="chart-emotion"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">Conversations over time</div>
+          <div class="chart-wrap"><canvas id="chart-convs"></canvas></div>
+        </div>
+      </div>
+
+      <div class="section-header">
+        <span class="section-title">Recent Users</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Name</th><th>Email</th><th>Gender</th><th>Age</th>
+            <th>Status</th><th>Joined</th><th>Last Active</th>
+          </tr></thead>
+          <tbody id="recent-users-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- USERS -->
+    <div class="page" id="page-users">
+      <div class="section-header">
+        <span class="section-title">All Users</span>
+        <input class="search-bar" type="text" id="user-search" placeholder="Search name or email..." oninput="filterUsers()"/>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>User ID</th><th>Name</th><th>Email</th><th>Age</th>
+            <th>Gender</th><th>DOB</th><th>Status</th>
+            <th>Conversations</th><th>Joined</th><th>Last Active</th><th>Actions</th>
+          </tr></thead>
+          <tbody id="users-body"></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="users-pagination"></div>
+    </div>
+
+    <!-- CONVERSATIONS -->
+    <div class="page" id="page-conversations">
+      <div class="section-header">
+        <span class="section-title">All Conversations</span>
+        <input class="search-bar" type="text" id="conv-search" placeholder="Search name or user..." oninput="filterConvs()"/>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Conv ID</th><th>Name</th><th>User</th><th>Email</th>
+            <th>Messages</th><th>Dominant Emotion</th><th>Crisis</th>
+            <th>Started</th><th>Ended</th><th>Details</th>
+          </tr></thead>
+          <tbody id="convs-body"></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="convs-pagination"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- DETAIL PANEL -->
+<div id="detail-panel">
+  <div class="panel-header">
+    <div class="panel-title" id="panel-title">User Detail</div>
+    <button class="btn-close" onclick="closePanel()">✕</button>
+  </div>
+  <div class="panel-body" id="panel-body"></div>
+</div>
+
+<script>
+const API = '';
+let token    = localStorage.getItem('ms_admin_token');
+let adminUser = null;
+let allUsers  = [];
+let allConvs  = [];
+let userPage  = 0;
+let convPage  = 0;
+const PAGE_SIZE = 20;
+
+// ── Time ──
+function updateTime() {
+  document.getElementById('topbar-time').textContent =
+    new Date().toLocaleTimeString('en-US', {hour:'2-digit',minute:'2-digit'});
+}
+setInterval(updateTime, 1000); updateTime();
+
+// ── Toast ──
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// ── Auth ──
+async function doLogin() {
+  const email = document.getElementById('login-email').value;
+  const pass  = document.getElementById('login-pass').value;
+  const err   = document.getElementById('login-err');
+  err.style.display = 'none';
+  try {
+    const res  = await fetch(API + '/api/auth/login', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({email, password: pass}),
+    });
+    const data = await res.json();
+    if (!res.ok) { err.textContent = data.detail || 'Login failed'; err.style.display = 'block'; return; }
+    if (data.role !== 'admin') { err.textContent = 'Not an admin account'; err.style.display = 'block'; return; }
+    token = data.token;
+    adminUser = data;
+    localStorage.setItem('ms_admin_token', token);
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('admin-name').textContent = data.name || 'Admin';
+    loadAll();
+  } catch { err.textContent = 'Connection error'; err.style.display = 'block'; }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.getElementById('login-screen').style.display !== 'none') doLogin();
+});
+
+function logout() {
+  localStorage.removeItem('ms_admin_token');
+  location.reload();
+}
+
+function authHeaders() {
+  return {'Content-Type':'application/json', 'Authorization': 'Bearer ' + token};
+}
+
+// ── Init ──
+if (token) {
+  fetch(API + '/api/auth/me', {headers: authHeaders()})
+    .then(r => r.json())
+    .then(d => {
+      if (d.role === 'admin') {
+        adminUser = d;
+        document.getElementById('login-screen').style.display = 'none';
+        document.getElementById('admin-name').textContent = d.name || 'Admin';
+        loadAll();
+      } else { localStorage.removeItem('ms_admin_token'); }
+    }).catch(() => { localStorage.removeItem('ms_admin_token'); });
+}
+
+async function loadAll() {
+  await Promise.all([loadStats(), loadUsers(), loadConversations()]);
+  buildCharts();
+}
+
+// ── Stats ──
+async function loadStats() {
+  const res  = await fetch(API + '/api/admin/stats', {headers: authHeaders()});
+  const data = await res.json();
+  document.getElementById('s-users').textContent  = data.total_users ?? '—';
+  document.getElementById('s-active').textContent = data.active_users ?? '—';
+  document.getElementById('s-convs').textContent  = data.total_conversations ?? '—';
+  document.getElementById('s-crisis').textContent = data.crisis_messages ?? '—';
+}
+
+// ── Users ──
+async function loadUsers() {
+  const res = await fetch(API + '/api/admin/users?limit=200', {headers: authHeaders()});
+  allUsers  = await res.json();
+  renderUsers();
+  renderRecentUsers();
+}
+
+function renderUsers() {
+  const query    = (document.getElementById('user-search')?.value || '').toLowerCase();
+  const filtered = allUsers.filter(u =>
+    (!query || (u.name||'').toLowerCase().includes(query) || (u.email||'').toLowerCase().includes(query))
+  );
+  const start  = userPage * PAGE_SIZE;
+  const paged  = filtered.slice(start, start + PAGE_SIZE);
+  const body   = document.getElementById('users-body');
+  body.innerHTML = paged.map(u => `
+    <tr>
+      <td class="mono">${u.user_id.slice(0,8)}…</td>
+      <td style="font-weight:500;color:var(--text)">${u.name || '—'}</td>
+      <td class="mono" style="font-size:.72rem">${u.email || '—'}</td>
+      <td class="mono">${u.age || '—'}</td>
+      <td>${u.gender ? `<span class="pill user">${u.gender}</span>` : '—'}</td>
+      <td class="mono">${u.date_of_birth || '—'}</td>
+      <td><span class="pill ${u.is_active ? 'active' : 'inactive'}">${u.is_active ? 'active' : 'disabled'}</span></td>
+      <td class="mono">${u.conversation_count ?? 0}</td>
+      <td class="mono">${fmtDate(u.created_at)}</td>
+      <td class="mono">${fmtDate(u.last_active)}</td>
+      <td>
+        <button onclick="openUserDetail('${u.user_id}')" style="background:var(--surface3);border:1px solid var(--border2);border-radius:6px;padding:3px 10px;color:var(--accent3);font-size:.72rem;cursor:pointer;font-family:var(--mono)">detail</button>
+        <button onclick="toggleUser('${u.user_id}')" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:3px 10px;color:var(--text3);font-size:.72rem;cursor:pointer;font-family:var(--mono);margin-left:4px">${u.is_active ? 'disable' : 'enable'}</button>
+      </td>
+    </tr>
+  `).join('');
+  renderPagination('users-pagination', filtered.length, userPage, (p) => { userPage = p; renderUsers(); });
+}
+
+function filterUsers() { userPage = 0; renderUsers(); }
+
+function renderRecentUsers() {
+  const recent = [...allUsers].slice(0, 8);
+  document.getElementById('recent-users-body').innerHTML = recent.map(u => `
+    <tr>
+      <td style="font-weight:500;color:var(--text)">${u.name || '—'}</td>
+      <td class="mono" style="font-size:.72rem">${u.email || '—'}</td>
+      <td>${u.gender ? `<span class="pill user">${u.gender}</span>` : '—'}</td>
+      <td class="mono">${u.age || '—'}</td>
+      <td><span class="pill ${u.is_active ? 'active' : 'inactive'}">${u.is_active ? 'active' : 'disabled'}</span></td>
+      <td class="mono">${fmtDate(u.created_at)}</td>
+      <td class="mono">${fmtDate(u.last_active)}</td>
+    </tr>
+  `).join('');
+}
+
+async function toggleUser(userId) {
+  const res  = await fetch(API + `/api/admin/users/${userId}/toggle-active`, {
+    method: 'PATCH', headers: authHeaders(),
+  });
+  const data = await res.json();
+  const u    = allUsers.find(x => x.user_id === userId);
+  if (u) u.is_active = data.is_active;
+  renderUsers(); renderRecentUsers();
+  toast(data.is_active ? 'User enabled' : 'User disabled');
+}
+
+async function openUserDetail(userId) {
+  const res  = await fetch(API + `/api/admin/users/${userId}/detail`, {headers: authHeaders()});
+  const data = await res.json();
+  document.getElementById('panel-title').textContent = data.name || 'User Detail';
+
+  const EMOTIONS = ['anger','disgust','fear','joy','sadness','surprise','trust','anticipation'];
+  const scores   = data.global_emotion?.scores || {};
+
+  document.getElementById('panel-body').innerHTML = `
+    <div class="section-sub">Profile</div>
+    ${infoRow('User ID', data.user_id)}
+    ${infoRow('Name', data.name || '—')}
+    ${infoRow('Email', data.email || '—')}
+    ${infoRow('Age', data.age || '—')}
+    ${infoRow('Gender', data.gender || '—')}
+    ${infoRow('Date of Birth', data.date_of_birth || '—')}
+    ${infoRow('Status', data.is_active ? '✅ active' : '🔴 disabled')}
+    ${infoRow('Joined', fmtDateFull(data.created_at))}
+    ${infoRow('Last Active', fmtDateFull(data.last_active))}
+
+    <div class="section-sub">Global Emotion State</div>
+    ${infoRow('Dominant', data.global_emotion?.dominant || '—')}
+    ${infoRow('Turn Count', data.global_emotion?.turn_count ?? '—')}
+    ${infoRow('Crisis Flag', data.global_emotion?.crisis_flag ? '🚨 yes' : 'no')}
+    <div class="emo-panel-grid" style="margin-top:10px">
+      ${EMOTIONS.map(e => {
+        const pct = Math.round((scores[e] || 0) * 100);
+        return `<div class="emo-cell">
+          <div class="emo-cell-name">${e}</div>
+          <div class="emo-cell-bar"><div class="emo-cell-fill" style="width:${pct}%"></div></div>
+          <div class="emo-cell-val">${pct}%</div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <div class="section-sub">Conversations (${data.conversations?.length || 0})</div>
+    ${(data.conversations || []).map(c => `
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px">
+        <div style="font-size:.78rem;font-weight:500;color:var(--text);margin-bottom:4px">${c.name_conversation || 'Unnamed'}</div>
+        <div style="font-size:.7rem;font-family:var(--mono);color:var(--text3);margin-bottom:8px">${c.conversation_id}</div>
+        <div style="display:flex;gap:16px;font-size:.72rem;color:var(--text3);font-family:var(--mono);margin-bottom:8px">
+          <span>msgs: ${c.message_count}</span>
+          <span>dominant: ${c.dominant_emotion || '—'}</span>
+          <span>${fmtDate(c.started_at)}</span>
+        </div>
+        <div class="emo-panel-grid">
+          ${EMOTIONS.map(e => {
+            const pct = Math.round(((c.emotion_scores || {})[e] || 0) * 100);
+            return `<div class="emo-cell">
+              <div class="emo-cell-name">${e}</div>
+              <div class="emo-cell-bar"><div class="emo-cell-fill" style="width:${pct}%"></div></div>
+              <div class="emo-cell-val">${pct}%</div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    `).join('')}
+  `;
+
+  document.getElementById('detail-panel').classList.add('open');
+  document.getElementById('overlay').classList.add('show');
+}
+
+// ── Conversations ──
+async function loadConversations() {
+  const res = await fetch(API + '/api/admin/conversations?limit=200', {headers: authHeaders()});
+  allConvs  = await res.json();
+  renderConvs();
+}
+
+function renderConvs() {
+  const query    = (document.getElementById('conv-search')?.value || '').toLowerCase();
+  const filtered = allConvs.filter(c =>
+    (!query ||
+     (c.name_conversation||'').toLowerCase().includes(query) ||
+     (c.user_name||'').toLowerCase().includes(query) ||
+     (c.user_email||'').toLowerCase().includes(query))
+  );
+  const start = convPage * PAGE_SIZE;
+  const paged = filtered.slice(start, start + PAGE_SIZE);
+  const COLORS = {anger:'#f87171',fear:'#fb923c',sadness:'#60a5fa',disgust:'#a78bfa',joy:'#34d399',surprise:'#fbbf24',trust:'#6ee7b7',anticipation:'#c4b5fd'};
+  document.getElementById('convs-body').innerHTML = paged.map(c => `
+    <tr>
+      <td class="mono">${(c.conversation_id||'').slice(0,8)}…</td>
+      <td style="font-weight:500;color:var(--text);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.name_conversation || 'New conversation'}</td>
+      <td style="color:var(--text)">${c.user_name || '—'}</td>
+      <td class="mono" style="font-size:.7rem">${c.user_email || '—'}</td>
+      <td class="mono">${c.message_count ?? 0}</td>
+      <td>${c.dominant_emotion ? `<span style="color:${COLORS[c.dominant_emotion]||'var(--text2)'}">● ${c.dominant_emotion}</span>` : '—'}</td>
+      <td>${c.crisis_count > 0 ? `<span class="pill inactive">🚨 ${c.crisis_count}</span>` : '<span style="color:var(--text3);font-size:.72rem">none</span>'}</td>
+      <td class="mono">${fmtDate(c.started_at)}</td>
+      <td class="mono">${fmtDate(c.ended_at)}</td>
+      <td><button onclick="openConvDetail('${c.conversation_id}')" style="background:var(--surface3);border:1px solid var(--border2);border-radius:6px;padding:3px 10px;color:var(--accent3);font-size:.72rem;cursor:pointer;font-family:var(--mono)">view</button></td>
+    </tr>
+  `).join('');
+  renderPagination('convs-pagination', filtered.length, convPage, (p) => { convPage = p; renderConvs(); });
+}
+
+function filterConvs() { convPage = 0; renderConvs(); }
+
+async function openConvDetail(convId) {
+  const conv = allConvs.find(c => c.conversation_id === convId);
+  if (!conv) return;
+  const EMOTIONS = ['anger','disgust','fear','joy','sadness','surprise','trust','anticipation'];
+  const res  = await fetch(API + `/api/emotion/conversation/${convId}`, {headers: authHeaders()});
+  const emo  = await res.json();
+  const msgs = await (await fetch(API + `/api/conversation/${convId}/messages`, {headers: authHeaders()})).json();
+
+  document.getElementById('panel-title').textContent = conv.name_conversation || 'Conversation';
+  document.getElementById('panel-body').innerHTML = `
+    <div class="section-sub">Info</div>
+    ${infoRow('Conv ID', conv.conversation_id)}
+    ${infoRow('Name', conv.name_conversation || '—')}
+    ${infoRow('User', conv.user_name || '—')}
+    ${infoRow('Email', conv.user_email || '—')}
+    ${infoRow('Messages', conv.message_count)}
+    ${infoRow('Dominant Emotion', conv.dominant_emotion || '—')}
+    ${infoRow('Crisis Flags', conv.crisis_count)}
+    ${infoRow('Started', fmtDateFull(conv.started_at))}
+    ${infoRow('Ended', fmtDateFull(conv.ended_at))}
+
+    <div class="section-sub">Emotion Scores</div>
+    <div class="emo-panel-grid">
+      ${EMOTIONS.map(e => {
+        const pct = Math.round(((emo.scores||{})[e]||0)*100);
+        return `<div class="emo-cell">
+          <div class="emo-cell-name">${e}</div>
+          <div class="emo-cell-bar"><div class="emo-cell-fill" style="width:${pct}%"></div></div>
+          <div class="emo-cell-val">${pct}%</div>
+        </div>`;
+      }).join('')}
+    </div>
+
+    <div class="section-sub">Messages (${msgs.length})</div>
+    <div style="display:flex;flex-direction:column;gap:6px;max-height:400px;overflow-y:auto">
+      ${msgs.map(m => `
+        <div style="padding:8px 12px;border-radius:8px;font-size:.78rem;
+          ${m.role==='user'
+            ? 'background:var(--surface3);color:var(--text);text-align:right'
+            : 'background:var(--surface2);border:1px solid var(--border);color:var(--text2)'}">
+          <div style="font-size:.65rem;color:var(--text3);font-family:var(--mono);margin-bottom:3px">${m.role} · ${m.timestamp}</div>
+          ${escHtml(m.content)}
+        </div>
+      `).join('')}
+    </div>
+  `;
+  document.getElementById('detail-panel').classList.add('open');
+  document.getElementById('overlay').classList.add('show');
+}
+
+function closePanel() {
+  document.getElementById('detail-panel').classList.remove('open');
+  document.getElementById('overlay').classList.remove('show');
+}
+
+// ── Charts ──
+let emotionChart, convsChart;
+function buildCharts() {
+  const EMOTIONS = ['anger','disgust','fear','joy','sadness','surprise','trust','anticipation'];
+  const COLORS   = ['#f87171','#a78bfa','#60a5fa','#34d399','#818cf8','#fbbf24','#6ee7b7','#c4b5fd'];
+
+  // Aggregate emotion from all conversations
+  const totals = Object.fromEntries(EMOTIONS.map(e => [e, 0]));
+  let convCount = 0;
+  allConvs.forEach(c => {
+    if (c.dominant_emotion) { totals[c.dominant_emotion] = (totals[c.dominant_emotion] || 0) + 1; convCount++; }
+  });
+
+  const ctx1 = document.getElementById('chart-emotion').getContext('2d');
+  if (emotionChart) emotionChart.destroy();
+  emotionChart = new Chart(ctx1, {
+    type: 'doughnut',
+    data: {
+      labels:   EMOTIONS,
+      datasets: [{
+        data: EMOTIONS.map(e => totals[e]),
+        backgroundColor: COLORS,
+        borderColor: '#111118', borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { color: '#9990bb', font: { size: 10, family: 'DM Mono' }, boxWidth: 10 } } }
+    }
+  });
+
+  // Conversations by date (last 14 days)
+  const days   = Array.from({length: 14}, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - (13 - i));
+    return d.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+  });
+  const counts = new Array(14).fill(0);
+  allConvs.forEach(c => {
+    if (!c.started_at) return;
+    const d = new Date(c.started_at);
+    const label = d.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+    const idx   = days.indexOf(label);
+    if (idx >= 0) counts[idx]++;
+  });
+
+  const ctx2 = document.getElementById('chart-convs').getContext('2d');
+  if (convsChart) convsChart.destroy();
+  convsChart = new Chart(ctx2, {
+    type: 'bar',
+    data: {
+      labels: days,
+      datasets: [{
+        label: 'Conversations',
+        data: counts,
+        backgroundColor: '#7c6af733',
+        borderColor: '#7c6af7',
+        borderWidth: 1, borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#5c5580', font: { size: 10, family: 'DM Mono' } }, grid: { color: '#ffffff08' } },
+        y: { ticks: { color: '#5c5580', font: { size: 10, family: 'DM Mono' } }, grid: { color: '#ffffff08' }, beginAtZero: true },
+      }
+    }
+  });
+}
+
+// ── Navigation ──
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.sb-item').forEach(i => i.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  document.getElementById('nav-' + name).classList.add('active');
+  const titles = {overview: 'Overview', users: 'Users', conversations: 'Conversations'};
+  document.getElementById('page-title').textContent = titles[name] || name;
+}
+
+// ── Pagination ──
+function renderPagination(containerId, total, current, onChange) {
+  const pages   = Math.ceil(total / PAGE_SIZE);
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '';
+  if (pages <= 1) return;
+  for (let i = 0; i < pages; i++) {
+    const btn = document.createElement('button');
+    btn.className = 'pg-btn' + (i === current ? ' active' : '');
+    btn.textContent = i + 1;
+    btn.onclick = () => onChange(i);
+    container.appendChild(btn);
+  }
+}
+
+// ── Helpers ──
+function infoRow(key, val) {
+  return `<div class="info-row"><span class="info-key">${key}</span><span class="info-val">${val}</span></div>`;
+}
+function fmtDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'});
+}
+function fmtDateFull(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('en-US', {month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit'});
+}
+function escHtml(t) {
+  const d = document.createElement('div'); d.textContent = t; return d.innerHTML;
+}
+</script>
+</body>
+</html>

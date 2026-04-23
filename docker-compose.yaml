@@ -1,0 +1,96 @@
+# ============================================================
+# docker-compose.yml
+# Services: FastAPI App + PostgreSQL + Redis + Qdrant
+# ============================================================
+
+services:
+
+  # ── FastAPI App ─────────────────────────────────────────
+  app:
+    build: .
+    container_name: mindspace_app
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://mindspace:mindspace123@postgres:5432/mindspace_db
+      - REDIS_URL=redis://redis:6379
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+    volumes:
+      # Mount data folder để knowledge base và FAISS index persist
+      - ./data:/app/data
+      - ./static:/app/static
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - mindspace_net
+
+  # ── PostgreSQL ───────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: mindspace_postgres
+    environment:
+      POSTGRES_USER:     mindspace
+      POSTGRES_PASSWORD: mindspace123
+      POSTGRES_DB:       mindspace_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"    # Expose để dùng DB client nếu cần
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mindspace -d mindspace_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - mindspace_net
+
+  # ── Redis ────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: mindspace_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - mindspace_net
+
+  # ── Qdrant (Vector DB thay FAISS) ───────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: mindspace_qdrant
+    ports:
+      - "6333:6333"    # REST API
+      - "6334:6334"    # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+    networks:
+      - mindspace_net
+
+# ── Volumes (persistent storage) ────────────────────────────
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+
+# ── Network ─────────────────────────────────────────────────
+networks:
+  mindspace_net:
+    driver: bridge

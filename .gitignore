@@ -1,0 +1,79 @@
+# ============================================================
+# .gitignore — MindSpace
+# ============================================================
+
+# ── Python ───────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyc
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ── Virtual environments ─────────────────────────────────────
+venv/
+.venv/
+env/
+ENV/
+
+# ── Environment / Secrets ────────────────────────────────────
+# NEVER commit these — they contain API keys and passwords
+.env
+.env.*
+*.env
+!.env.example
+
+# ── Database (local dev only) ────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+chatbot.db
+
+# ── FAISS index (rebuilt from knowledge base on startup) ─────
+data/faiss.index
+data/chunks.json
+
+# ── AI model cache (large files, auto-downloaded at runtime) ─
+.cache/
+models/
+*.pt
+*.bin
+*.safetensors
+huggingface/
+
+# ── Logs ─────────────────────────────────────────────────────
+*.log
+logs/
+
+# ── IDE ──────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.code-workspace
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Docker ───────────────────────────────────────────────────
+# docker-compose.yml → KEEP (needed for deployment)
+# Dockerfile         → KEEP (needed for deployment)
+
+# ── Node (nếu sau này thêm frontend build) ───────────────────
+node_modules/
+npm-debug.log*
+
+# ── Static uploads (nếu user upload file) ───────────────────
+static/uploads/
+
+# ── Jupyter notebooks (nếu có experiment) ───────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── Test / Coverage ──────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
