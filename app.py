@@ -6,12 +6,13 @@ import os
 import secrets
 from datetime import date, datetime, timedelta, timezone
 
-import jwt
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from jose import jwt as jose_jwt
+from jose.exceptions import ExpiredSignatureError, JWTError
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import sessionmaker
 
@@ -65,15 +66,15 @@ def create_token(user_id: str, role: str) -> str:
         "role":    role,
         "exp":     datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRE),
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm="HS256")
+    return jose_jwt.encode(payload, JWT_SECRET, algorithm="HS256")
 
 
 def decode_token(token: str) -> dict:
     try:
-        return jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
-    except jwt.ExpiredSignatureError:
+        return jose_jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+    except ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
-    except jwt.InvalidTokenError:
+    except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 

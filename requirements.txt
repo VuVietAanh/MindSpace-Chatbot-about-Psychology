@@ -1,37 +1,35 @@
 # ============================================================
-# requirements.txt — Mental Health Chatbot
-# Python >= 3.11
+# requirements.txt — MindSpace
 # ============================================================
 
-# ── Web Framework ───────────────────────────────────────────
+# Web framework
 fastapi>=0.110.0
 uvicorn>=0.29.0
 
-# ── Auth ────────────────────────────────────────────────────
-python-jose[cryptography]
-passlib[bcrypt]
+# Auth
+python-jose[cryptography]>=3.3.0
 
-# ── LLM ─────────────────────────────────────────────────────
+# LLM
 openai>=1.0.0
 
-# ── Embedding & Emotion ─────────────────────────────────────
+# AI models
 sentence-transformers>=2.7.0
 transformers>=4.40.0
 torch>=2.2.0
 
-# ── Vector Search ───────────────────────────────────────────
+# Vector search
 faiss-cpu>=1.7.4
 qdrant-client>=1.8.0
 
-# ── Database ─────────────────────────────────────────────────
+# Database
 sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.9
 aiosqlite>=0.20.0
 
-# ── PDF ──────────────────────────────────────────────────────
+# PDF
 pypdf>=4.0.0
 
-# ── Utilities ────────────────────────────────────────────────
+# Utils
 python-dotenv>=1.0.0
 pydantic>=2.0.0
 numpy>=1.26.0
