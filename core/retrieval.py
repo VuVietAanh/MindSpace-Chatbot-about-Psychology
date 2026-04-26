@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from dotenv import load_dotenv
 
-from core.embedding import Embedder, get_embedder
+from core.embedding import get_embedder
 
 load_dotenv()
 

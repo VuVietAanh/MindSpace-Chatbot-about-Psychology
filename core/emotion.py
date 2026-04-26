@@ -15,6 +15,8 @@ from transformers import pipeline
 
 load_dotenv()
 
+AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "")
+
 MODEL_TO_PLUTCHIK = {
     "anger":   "anger",
     "disgust": "disgust",
@@ -169,11 +171,16 @@ class EmotionAnalyzer:
             method="direct",
         )
 
-
 _analyzer_instance = None
 
-def get_emotion_analyzer() -> EmotionAnalyzer:
+def get_emotion_analyzer():
     global _analyzer_instance
     if _analyzer_instance is None:
-        _analyzer_instance = EmotionAnalyzer()
+        if AI_SERVICE_URL:
+            print(f"🌐 Using remote emotion service: {AI_SERVICE_URL}")
+            from core.emotion_remote import RemoteEmotionAnalyzer
+            _analyzer_instance = RemoteEmotionAnalyzer(AI_SERVICE_URL)
+        else:
+            print("💻 Using local emotion model")
+            _analyzer_instance = EmotionAnalyzer()
     return _analyzer_instance

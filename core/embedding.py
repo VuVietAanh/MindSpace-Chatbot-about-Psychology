@@ -9,8 +9,11 @@ import pickle
 from dataclasses import dataclass
 
 import numpy as np
+from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 
+load_dotenv()
+AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "")
 
 # ------------------------------------------------------------
 # Kết quả embedding
@@ -132,13 +135,17 @@ class Embedder:
 # ------------------------------------------------------------
 _embedder_instance = None
 
-def get_embedder(model_name: str = "all-MiniLM-L6-v2") -> Embedder:
-    """Lazy load — chỉ load model 1 lần"""
+def get_embedder(model_name: str = "all-MiniLM-L6-v2"):
     global _embedder_instance
     if _embedder_instance is None:
-        _embedder_instance = Embedder(model_name=model_name)
+        if AI_SERVICE_URL:
+            print(f"🌐 Using remote embedder: {AI_SERVICE_URL}")
+            from core.embedding_remote import RemoteEmbedder
+            _embedder_instance = RemoteEmbedder(AI_SERVICE_URL)
+        else:
+            print("💻 Using local embedder")
+            _embedder_instance = Embedder(model_name=model_name)
     return _embedder_instance
-
 
 # ------------------------------------------------------------
 # Test thử
