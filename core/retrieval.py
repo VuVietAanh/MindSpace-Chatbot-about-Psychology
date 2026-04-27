@@ -3,6 +3,8 @@
 # Vector search — FAISS (local) hoặc Qdrant (Docker)
 # ============================================================
 
+from __future__ import annotations
+
 import json
 import os
 from dataclasses import dataclass, field
@@ -54,8 +56,8 @@ class DocumentChunker:
             raw_chunks.append(" ".join(words[start:end]))
         chunks = []
         for i, chunk_txt in enumerate(raw_chunks):
-            ws  = max(0, i - self.window_size)
-            we  = min(len(raw_chunks), i + self.window_size + 1)
+            ws   = max(0, i - self.window_size)
+            we   = min(len(raw_chunks), i + self.window_size + 1)
             wtxt = " ".join(raw_chunks[ws:we])
             chunks.append(Chunk(chunk_id=i, text=chunk_txt, window_text=wtxt, source=source))
         return chunks
@@ -106,7 +108,7 @@ class DocumentChunker:
 # ============================================================
 class FAISSRetriever:
 
-    def __init__(self, embedder: Embedder = None):
+    def __init__(self, embedder=None):
         self._embedder = embedder or get_embedder()
         self._index    = None
         self._chunks   = []
@@ -182,7 +184,7 @@ class FAISSRetriever:
 # ============================================================
 class QdrantRetriever:
 
-    def __init__(self, embedder: Embedder = None):
+    def __init__(self, embedder=None):
         from qdrant_client import QdrantClient
         from qdrant_client.models import Distance, VectorParams
 
@@ -251,8 +253,6 @@ class QdrantRetriever:
                         if emotion_summary else self._embedder.embed(query))
         vector = embed_result.vector.tolist()
 
-        # ── Version-safe search ─────────────────────────────
-        # qdrant-client >= 1.7.4 đã bỏ .search(), dùng .query_points()
         try:
             hits = self._client.query_points(
                 collection_name=self._collection,
@@ -262,7 +262,6 @@ class QdrantRetriever:
                 with_payload=True,
             ).points
         except AttributeError:
-            # Fallback cho qdrant-client cũ hơn
             hits = self._client.search(
                 collection_name=self._collection,
                 query_vector=vector,
@@ -295,7 +294,7 @@ class QdrantRetriever:
 # ============================================================
 # Factory
 # ============================================================
-def get_retriever(embedder: Embedder = None):
+def get_retriever(embedder=None):
     if USE_QDRANT:
         print("🔵 Using Qdrant (Docker mode)")
         return QdrantRetriever(embedder=embedder)
