@@ -346,6 +346,13 @@ async function doLogin() {
   const email = document.getElementById('l-email').value.trim();
   const pass  = document.getElementById('l-pass').value;
   document.getElementById('l-err').style.display = 'none';
+
+  // Validate email format
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    showErr('l-err', 'Invalid email format'); return;
+  }
+  if (!pass) { showErr('l-err', 'Password required'); return; }
+
   try {
     const res  = await fetch(API + '/api/auth/login', {
       method: 'POST', headers: {'Content-Type':'application/json'},
@@ -353,8 +360,18 @@ async function doLogin() {
     });
     const data = await res.json();
     if (!res.ok) { showErr('l-err', data.detail || 'Login failed'); return; }
-    authToken = data.token; currentUser = data;
+
+    authToken = data.token;
+    currentUser = data;
     localStorage.setItem('ms_token', authToken);
+    // ← Lưu user_id từ token vào localStorage
+    localStorage.setItem('ms_uid', data.user_id);
+
+    // Admin → redirect sang /admin
+    if (data.role === 'admin') {
+      window.location.href = '/admin';
+      return;
+    }
     afterAuth();
   } catch { showErr('l-err', 'Connection error'); }
 }
@@ -367,7 +384,22 @@ async function doRegister() {
   const gender = document.getElementById('r-gender').value || null;
   const dob    = document.getElementById('r-dob').value || null;
   document.getElementById('r-err').style.display = 'none';
-  if (!name || !email || !pass) { showErr('r-err', 'Name, email and password required'); return; }
+
+  // Validate
+  if (!name)  { showErr('r-err', 'Name required'); return; }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    showErr('r-err', 'Invalid email format'); return;
+  }
+  if (pass.length < 8) {
+    showErr('r-err', 'Password must be at least 8 characters'); return;
+  }
+  if (!/[A-Z]/.test(pass)) {
+    showErr('r-err', 'Password must contain at least 1 uppercase letter'); return;
+  }
+  if (!/[0-9]/.test(pass)) {
+    showErr('r-err', 'Password must contain at least 1 number'); return;
+  }
+
   try {
     const res  = await fetch(API + '/api/auth/register', {
       method: 'POST', headers: {'Content-Type':'application/json'},
@@ -375,8 +407,11 @@ async function doRegister() {
     });
     const data = await res.json();
     if (!res.ok) { showErr('r-err', data.detail || 'Registration failed'); return; }
-    authToken = data.token; currentUser = data;
+
+    authToken = data.token;
+    currentUser = data;
     localStorage.setItem('ms_token', authToken);
+    localStorage.setItem('ms_uid', data.user_id);
     afterAuth();
   } catch { showErr('r-err', 'Connection error'); }
 }
@@ -402,7 +437,16 @@ function doLogout() {
 if (authToken) {
   fetch(API + '/api/auth/me', {headers: {'Authorization': 'Bearer ' + authToken}})
     .then(r => r.json())
-    .then(d => { currentUser = d; afterAuth(); })
+    .then(d => {
+      if (d.role === 'admin') {
+        window.location.href = '/admin';
+        return;
+      }
+      currentUser = d;
+      // Sync user_id từ server về localStorage
+      localStorage.setItem('ms_uid', d.user_id);
+      afterAuth();
+    })
     .catch(() => localStorage.removeItem('ms_token'));
 }
 
@@ -422,18 +466,21 @@ async function afterAuth() {
     document.getElementById('sidebar-user-email').textContent = currentUser.email;
   }
 
-  // Start session
-  const storedUid = localStorage.getItem('ms_uid');
+  // Dùng user_id từ token thay vì localStorage riêng
+  userId = currentUser.user_id;
+  localStorage.setItem('ms_uid', userId);  // ← sync lại
+
   const res  = await fetch(API + '/api/start', {
     method: 'POST', headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({name: currentUser?.name || null, user_id: storedUid}),
+    body: JSON.stringify({
+      name: currentUser?.name || null,
+      user_id: userId,  // ← dùng user_id từ JWT
+    }),
   });
   const data = await res.json();
 
-  userId         = data.user_id;
   conversationId = data.conversation_id;
   activeConvId   = conversationId;
-  localStorage.setItem('ms_uid', userId);
 
   if (data.identity_check) {
     document.getElementById('identity-question-text').innerHTML =
