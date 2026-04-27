@@ -8,6 +8,8 @@ import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 load_dotenv()
@@ -43,7 +45,7 @@ class EndRequest(BaseModel):
     conversation_id: str
 
 
-# ── Endpoints ────────────────────────────────────────────────
+# ── API Endpoints ─────────────────────────────────────────────
 
 @app.get("/health")
 def health():
@@ -55,7 +57,6 @@ def setup(req: SetupRequest):
     from sqlalchemy.orm import sessionmaker
 
     from db.crud import create_conversation, create_user, get_user
-    from db.models import init_db
 
     engine  = _pipeline._engine
     Session = sessionmaker(bind=engine)
@@ -104,6 +105,19 @@ def chat(req: ChatRequest):
 def end_session(req: EndRequest):
     _pipeline.end_session(req.conversation_id)
     return {"status": "ended"}
+
+
+# ── Serve frontend static files ───────────────────────────────
+# Đặt SAU các API routes để không bị override
+if os.path.exists("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/")
+def root():
+    index = "static/index.html"
+    if os.path.exists(index):
+        return FileResponse(index)
+    return {"status": "ok", "message": "MindSpace API running"}
 
 
 if __name__ == "__main__":
