@@ -4,15 +4,17 @@
 # ============================================================
 
 import os
+
 import numpy as np
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-app = FastAPI(title="MindSpace AI Service")
+app = FastAPI(title="MindSpace AI Service")  # ← bị thiếu trong file bạn gửi
 
 # ── Load models once at startup ──────────────────────────────
 print("⏳ Loading emotion model...")
 from transformers import pipeline as hf_pipeline
+
 emotion_pipe = hf_pipeline(
     "text-classification",
     model="j-hartmann/emotion-english-distilroberta-base",
@@ -23,6 +25,7 @@ print("✅ Emotion model loaded")
 
 print("⏳ Loading embedding model...")
 from sentence_transformers import SentenceTransformer
+
 embed_model = SentenceTransformer("all-MiniLM-L6-v2")
 print("✅ Embedding model loaded")
 
@@ -63,32 +66,26 @@ def analyze_emotion(req: EmotionRequest):
     if not text:
         raise HTTPException(status_code=400, detail="Empty text")
 
-    # C1: Expand nếu text quá ngắn (< 4 từ)
     method = "direct"
     if len(text.split()) < 4 and req.recent_history:
         context = " ".join(req.recent_history[-2:])
         text    = f"{context} {text}"
         method  = "expanded"
 
-    # Run emotion model
     results = emotion_pipe(text[:512])[0]
-
-    # Map scores
     raw_scores = {r["label"].lower(): round(r["score"], 4) for r in results}
 
-    # Build Plutchik 8 scores
     scores = {e: 0.0 for e in PLUTCHIK}
     for emotion in MODEL_EMOTIONS:
         if emotion in raw_scores and emotion in scores:
             scores[emotion] = raw_scores[emotion]
 
-    # C3: Combine với history nếu có
     if req.recent_history and method == "direct":
         try:
             hist_text = " ".join(req.recent_history[-3:])
             hist_results = emotion_pipe(hist_text[:512])[0]
             hist_scores  = {r["label"].lower(): r["score"] for r in hist_results}
-            alpha = 0.7  # Ưu tiên current input
+            alpha = 0.7
             for e in PLUTCHIK:
                 if e in hist_scores:
                     scores[e] = round(alpha * scores[e] + (1 - alpha) * hist_scores[e], 4)
@@ -96,7 +93,6 @@ def analyze_emotion(req: EmotionRequest):
         except Exception:
             pass
 
-    # Normalize
     total = sum(scores.values())
     if total > 0:
         scores = {e: round(v / total, 4) for e, v in scores.items()}

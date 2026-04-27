@@ -19,6 +19,7 @@ COPY . .
 
 RUN mkdir -p data/knowledge_base static/backgrounds static/chat_backgrounds
 
-EXPOSE 8001
+# Render dùng PORT env variable, không hardcode
+EXPOSE ${PORT:-8001}
 
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8001"]
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8001}"]
