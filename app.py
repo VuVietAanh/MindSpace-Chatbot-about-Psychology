@@ -4,6 +4,7 @@
 # ============================================================
 
 import os
+import re
 import secrets
 from datetime import datetime
 
@@ -115,28 +116,45 @@ class EndRequest(BaseModel):
 # AUTH ROUTES
 # ============================================================
 
-@app.post("/api/auth/register")
-def register(req: RegisterRequest, db: Session = Depends(get_db)):
-    from datetime import date
+def _validate_email(email: str) -> bool:
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(pattern, email))
 
-    from db.crud import create_user, get_user_by_email
+def _validate_password(password: str) -> tuple[bool, str]:
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters"
+    if not any(c.isupper() for c in password):
+        return False, "Password must contain at least 1 uppercase letter"
+    if not any(c.isdigit() for c in password):
+        return False, "Password must contain at least 1 number"
+    return True, ""
 
-    if get_user_by_email(db, req.email):
-        raise HTTPException(status_code=400, detail="Email already registered")
+@app.post("/api/auth/register", response_model=AuthResponse)
+def register(req: RegisterRequest):
+    session = Session()
+    try:
+        # Validate email format
+        if not _validate_email(req.email):
+            raise HTTPException(status_code=400, detail="Invalid email format")
 
-    dob = None
-    if req.date_of_birth:
-        try:
-            dob = date.fromisoformat(req.date_of_birth)
-        except ValueError:
-            pass
+        # Validate password strength
+        ok, msg = _validate_password(req.password)
+        if not ok:
+            raise HTTPException(status_code=400, detail=msg)
 
-    user  = create_user(db, name=req.name, email=req.email, password=req.password,
-                        age=req.age, gender=req.gender, date_of_birth=dob)
-    token = secrets.token_hex(32)
-    _tokens[token] = user.user_id
-    return {"token": token, "user_id": user.user_id, "name": user.name,
-            "email": user.email, "role": user.role}
+        # Check email exists
+        if get_user_by_email(session, req.email):
+            raise HTTPException(status_code=400, detail="Email already registered")
+
+        user = create_user(
+            session, name=req.name, email=req.email, password=req.password,
+            age=req.age, gender=req.gender, date_of_birth=req.date_of_birth,
+        )
+        token = create_token(user.user_id, user.role)
+        return AuthResponse(token=token, user_id=user.user_id,
+                            name=user.name, role=user.role)
+    finally:
+        session.close()
 
 
 @app.post("/api/auth/login")
@@ -622,7 +640,6 @@ def root():
     if os.path.exists(f):
         return FileResponse(f)
     return {"status": "ok", "message": "MindSpace API running"}
-
 
 if __name__ == "__main__":
     import uvicorn
