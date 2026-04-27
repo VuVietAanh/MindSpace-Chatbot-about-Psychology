@@ -8,10 +8,7 @@
 import os
 from dataclasses import dataclass
 
-import torch
 from dotenv import load_dotenv
-from openai import OpenAI
-from transformers import pipeline
 
 load_dotenv()
 
@@ -27,9 +24,9 @@ MODEL_TO_PLUTCHIK = {
     "neutral": None,
 }
 
-PLUTCHIK_EMOTIONS    = ["anger", "disgust", "fear", "joy", "sadness", "surprise", "trust", "anticipation"]
-NEGATIVE_EMOTIONS    = ["anger", "disgust", "fear", "sadness"]
-MODEL_EMOTIONS       = ["anger", "disgust", "fear", "joy", "sadness", "surprise"]
+PLUTCHIK_EMOTIONS     = ["anger", "disgust", "fear", "joy", "sadness", "surprise", "trust", "anticipation"]
+NEGATIVE_EMOTIONS     = ["anger", "disgust", "fear", "sadness"]
+MODEL_EMOTIONS        = ["anger", "disgust", "fear", "joy", "sadness", "surprise"]
 SHORT_INPUT_THRESHOLD = 8
 
 
@@ -47,6 +44,10 @@ class EmotionResult:
 class EmotionAnalyzer:
 
     def __init__(self, model_name: str = "j-hartmann/emotion-english-distilroberta-base"):
+        # ── torch/transformers chỉ import khi thực sự dùng local model ──
+        import torch
+        from transformers import pipeline
+
         print(f"⏳ Loading emotion model: {model_name}")
         device = 0 if torch.cuda.is_available() else -1
         self._pipe = pipeline(
@@ -57,6 +58,7 @@ class EmotionAnalyzer:
             truncation=True,
             max_length=512,
         )
+        from openai import OpenAI
         self._llm = OpenAI(
             api_key=os.getenv("GROQ_API_KEY", ""),
             base_url="https://api.groq.com/openai/v1",
@@ -71,11 +73,9 @@ class EmotionAnalyzer:
         analyzed_text = text
         method        = "direct"
 
-        # C3: Ghép history nếu có
         if recent_history and len(recent_history) > 0:
             analyzed_text = self._combine_with_history(text, recent_history)
             method        = "with_history"
-        # C1: Expand nếu input ngắn/mơ hồ
         elif self._is_short_or_vague(text):
             analyzed_text = self._expand_input(text)
             method        = "expanded"
@@ -116,7 +116,6 @@ class EmotionAnalyzer:
     def _run_model(self, raw_text: str, analyzed_text: str, method: str) -> EmotionResult:
         raw_output = self._pipe(analyzed_text)[0]
 
-        # Khởi tạo tất cả về 0.0
         scores = {emotion: 0.0 for emotion in PLUTCHIK_EMOTIONS}
 
         for item in raw_output:
@@ -128,23 +127,14 @@ class EmotionAnalyzer:
             if mapped:
                 scores[mapped] = score
 
-        # ── FIX JOY SCORE ──────────────────────────────────────
-        # KHÔNG suy ra trust/anticipation từ joy/fear
-        # trust & anticipation giữ nguyên 0.0
-        # → Joy chỉ tăng khi model thực sự detect joy
-        # ────────────────────────────────────────────────────────
-
-        # Normalize chỉ trên 6 emotions model trả về thật
         model_total = sum(scores[e] for e in MODEL_EMOTIONS)
         if model_total > 0:
             for e in MODEL_EMOTIONS:
                 scores[e] = round(scores[e] / model_total, 4)
 
-        # trust & anticipation = 0 (không có model support, không suy ra)
         scores["trust"]        = 0.0
         scores["anticipation"] = 0.0
 
-        # Dominant chỉ xét 6 emotions model thật
         model_scores = {e: scores[e] for e in MODEL_EMOTIONS}
         dominant     = max(model_scores, key=model_scores.get) if any(v > 0 for v in model_scores.values()) else "neutral"
         confidence   = scores.get(dominant, 0.0)
@@ -170,6 +160,7 @@ class EmotionAnalyzer:
             analyzed_text=text or "",
             method="direct",
         )
+
 
 _analyzer_instance = None
 
