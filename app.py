@@ -60,6 +60,18 @@ def get_optional_user(authorization: str = Header(None)):
     token = authorization.split(" ", 1)[1]
     return _tokens.get(token)
 
+def _validate_email(email: str) -> bool:
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(pattern, email))
+
+def _validate_password(password: str) -> tuple[bool, str]:
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters"
+    if not any(c.isupper() for c in password):
+        return False, "Password must contain at least 1 uppercase letter"
+    if not any(c.isdigit() for c in password):
+        return False, "Password must contain at least 1 number"
+    return True, ""
 
 # ============================================================
 # REQUEST / RESPONSE MODELS
@@ -115,19 +127,6 @@ class EndRequest(BaseModel):
 # ============================================================
 # AUTH ROUTES
 # ============================================================
-
-def _validate_email(email: str) -> bool:
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return bool(re.match(pattern, email))
-
-def _validate_password(password: str) -> tuple[bool, str]:
-    if len(password) < 8:
-        return False, "Password must be at least 8 characters"
-    if not any(c.isupper() for c in password):
-        return False, "Password must contain at least 1 uppercase letter"
-    if not any(c.isdigit() for c in password):
-        return False, "Password must contain at least 1 number"
-    return True, ""
 
 @app.post("/api/auth/register", response_model=AuthResponse)
 def register(req: RegisterRequest):
