@@ -1,13 +1,19 @@
 # ============================================================
 # app.py — Main FastAPI app (Render)
-# Full API matching frontend routes
+#
+# FIXES:
+# 1. JWT thay vì in-memory dict → token sống sau restart
+# 2. /api/setup/create-admin — import đúng, dùng _Session()
+# 3. /api/auth/register — import đầy đủ, bỏ AuthResponse undefined
+# 4. Validate email format + duplicate + password rules
 # ============================================================
 
 import os
 import re
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
+import jwt  # pip install PyJWT
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,7 +34,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Pipeline (khởi tạo 1 lần) ───────────────────────────────
+# ── Pipeline ────────────────────────────────────────────────
 from pipeline import ChatbotPipeline
 
 _pipeline = ChatbotPipeline()
@@ -41,28 +47,72 @@ def get_db():
     finally:
         db.close()
 
-# ── Simple token store (in-memory) ──────────────────────────
-# Production nên dùng Redis hoặc JWT, nhưng đây đủ cho demo
-_tokens: dict[str, str] = {}  # token → user_id
+# ── JWT ─────────────────────────────────────────────────────
+# Thêm JWT_SECRET vào Render → Environment → Add variable
+# Tạo giá trị: python -c "import secrets; print(secrets.token_hex(32))"
+JWT_SECRET    = os.getenv("JWT_SECRET", "mindspace_default_secret_change_me")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_DAYS = 30
 
-def get_current_user(authorization: str = Header(None)):
+def create_token(user_id: str, role: str = "user") -> str:
+    payload = {
+        "sub":  user_id,
+        "role": role,
+        "exp":  datetime.now(timezone.utc) + timedelta(days=JWT_EXPIRE_DAYS),
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def decode_token(token: str) -> dict:
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired, please log in again")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+# ── Auth dependencies ────────────────────────────────────────
+def get_current_user(authorization: str = Header(None)) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Not authenticated")
-    token = authorization.split(" ", 1)[1]
-    user_id = _tokens.get(token)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    return user_id
+    payload = decode_token(authorization.split(" ", 1)[1])
+    return payload["sub"]
 
-def get_optional_user(authorization: str = Header(None)):
+def get_optional_user(authorization: str = Header(None)) -> str | None:
     if not authorization or not authorization.startswith("Bearer "):
         return None
-    token = authorization.split(" ", 1)[1]
-    return _tokens.get(token)
+    try:
+        return decode_token(authorization.split(" ", 1)[1])["sub"]
+    except Exception:
+        return None
+
+def require_admin(
+    authorization: str = Header(None),
+    db: Session = Depends(get_db),
+) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    payload = decode_token(authorization.split(" ", 1)[1])
+    if payload.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    return payload["sub"]
+
+# ── Validation helpers ───────────────────────────────────────
+def _validate_email(email: str) -> bool:
+    pattern = r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$'
+    return bool(re.match(pattern, email.strip()))
+
+def _validate_password(password: str) -> tuple[bool, str]:
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters"
+    if not any(c.isupper() for c in password):
+        return False, "Password must contain at least 1 uppercase letter (A-Z)"
+    if not any(c.isdigit() for c in password):
+        return False, "Password must contain at least 1 number (0-9)"
+    return True, ""
 
 
 # ============================================================
-# REQUEST / RESPONSE MODELS
+# REQUEST MODELS
 # ============================================================
 
 class LoginRequest(BaseModel):
@@ -73,15 +123,15 @@ class RegisterRequest(BaseModel):
     name:          str
     email:         str
     password:      str
-    age:           int  | None = None
-    gender:        str  | None = None
-    date_of_birth: str  | None = None
+    age:           int | None = None
+    gender:        str | None = None
+    date_of_birth: str | None = None
 
 class ProfileUpdateRequest(BaseModel):
-    name:          str  | None = None
-    age:           int  | None = None
-    gender:        str  | None = None
-    date_of_birth: str  | None = None
+    name:          str | None = None
+    age:           int | None = None
+    gender:        str | None = None
+    date_of_birth: str | None = None
 
 class StartRequest(BaseModel):
     name:    str | None = None
@@ -108,68 +158,84 @@ class CarryOverRequest(BaseModel):
     user_id:                str
     source_conversation_id: str
 
-class EndRequest(BaseModel):
-    conversation_id: str
-
 
 # ============================================================
 # AUTH ROUTES
 # ============================================================
 
-def _validate_email(email: str) -> bool:
-    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return bool(re.match(pattern, email))
-
-def _validate_password(password: str) -> tuple[bool, str]:
-    if len(password) < 8:
-        return False, "Password must be at least 8 characters"
-    if not any(c.isupper() for c in password):
-        return False, "Password must contain at least 1 uppercase letter"
-    if not any(c.isdigit() for c in password):
-        return False, "Password must contain at least 1 number"
-    return True, ""
-
-
 @app.post("/api/auth/register")
-def register(req: RegisterRequest):
-    session = Session()
-    try:
-        # Validate email format
-        if not _validate_email(req.email):
-            raise HTTPException(status_code=400, detail="Invalid email format")
+def register(req: RegisterRequest, db: Session = Depends(get_db)):
+    # Import đầy đủ ở đây để tránh circular import
+    from db.crud import create_user, get_user_by_email
 
-        # Validate password strength
-        ok, msg = _validate_password(req.password)
-        if not ok:
-            raise HTTPException(status_code=400, detail=msg)
+    # 1. Validate email format
+    if not _validate_email(req.email):
+        raise HTTPException(status_code=422, detail="Invalid email format. Example: user@gmail.com")
 
-        # Check email exists
-        if get_user_by_email(session, req.email):
-            raise HTTPException(status_code=400, detail="Email already registered")
-
-        user = create_user(
-            session, name=req.name, email=req.email, password=req.password,\
-            age=req.age, gender=req.gender, date_of_birth=req.date_of_birth,
+    # 2. Check email đã tồn tại chưa
+    if get_user_by_email(db, req.email.strip().lower()):
+        raise HTTPException(
+            status_code=409,
+            detail="This email is already registered. Please use a different email or log in."
         )
-        token = create_token(user.user_id, user.role)
-        return AuthResponse(token=token, user_id=user.user_id,
-                            name=user.name, role=user.role)
-    finally:
-        session.close()
+
+    # 3. Validate password
+    ok, msg = _validate_password(req.password)
+    if not ok:
+        raise HTTPException(status_code=422, detail=msg)
+
+    # 4. Validate name
+    if not req.name or not req.name.strip():
+        raise HTTPException(status_code=422, detail="Name is required")
+
+    # 5. Parse date_of_birth
+    from datetime import date
+    dob = None
+    if req.date_of_birth:
+        try:
+            dob = date.fromisoformat(req.date_of_birth)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="Invalid date format. Use YYYY-MM-DD")
+
+    user = create_user(
+        db,
+        name=req.name.strip(),
+        email=req.email.strip().lower(),
+        password=req.password,
+        age=req.age,
+        gender=req.gender,
+        date_of_birth=dob,
+        role="user",
+    )
+
+    token = create_token(user.user_id, role=user.role)
+    return {
+        "token":   token,
+        "user_id": user.user_id,
+        "name":    user.name,
+        "email":   user.email,
+        "role":    user.role,
+    }
 
 
 @app.post("/api/auth/login")
 def login(req: LoginRequest, db: Session = Depends(get_db)):
     from db.crud import authenticate_user
-    user = authenticate_user(db, req.email, req.password)
+
+    user = authenticate_user(db, req.email.strip().lower(), req.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if not user.is_active:
-        raise HTTPException(status_code=403, detail="Account disabled")
-    token = secrets.token_hex(32)
-    _tokens[token] = user.user_id
-    return {"token": token, "user_id": user.user_id, "name": user.name,
-            "email": user.email, "role": user.role}
+        raise HTTPException(status_code=403, detail="Account disabled. Contact support.")
+
+    token = create_token(user.user_id, role=user.role)
+    return {
+        "token":   token,
+        "user_id": user.user_id,
+        "name":    user.name,
+        "email":   user.email,
+        "role":    user.role,
+    }
 
 
 @app.get("/api/auth/me")
@@ -178,27 +244,115 @@ def me(user_id: str = Depends(get_current_user), db: Session = Depends(get_db)):
     user = get_user(db, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    return {"user_id": user.user_id, "name": user.name, "email": user.email,
-            "role": user.role, "age": user.age, "gender": user.gender,
-            "date_of_birth": str(user.date_of_birth) if user.date_of_birth else None}
+    return {
+        "user_id":       user.user_id,
+        "name":          user.name,
+        "email":         user.email,
+        "role":          user.role,
+        "age":           user.age,
+        "gender":        user.gender,
+        "date_of_birth": str(user.date_of_birth) if user.date_of_birth else None,
+    }
 
 
 @app.put("/api/auth/profile")
-def update_profile(req: ProfileUpdateRequest,
-                   user_id: str = Depends(get_current_user),
-                   db: Session = Depends(get_db)):
+def update_profile(
+    req: ProfileUpdateRequest,
+    user_id: str = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     from datetime import date
 
     from db.crud import update_user_profile
+
     dob = None
     if req.date_of_birth:
         try:
             dob = date.fromisoformat(req.date_of_birth)
         except ValueError:
-            pass
+            raise HTTPException(status_code=422, detail="Invalid date format. Use YYYY-MM-DD")
+
     update_user_profile(db, user_id, name=req.name, age=req.age,
                         gender=req.gender, date_of_birth=dob)
     return {"status": "updated"}
+
+
+# Realtime check email availability (dùng cho frontend validation)
+@app.get("/api/auth/check-email")
+def check_email(email: str, db: Session = Depends(get_db)):
+    from db.crud import get_user_by_email
+    if not _validate_email(email):
+        return {"available": False, "reason": "invalid_format"}
+    exists = get_user_by_email(db, email.strip().lower())
+    return {"available": not bool(exists), "reason": "taken" if exists else None}
+
+
+# ============================================================
+# ADMIN SETUP — Tạo tài khoản admin lần đầu
+# ============================================================
+
+class CreateAdminRequest(BaseModel):
+    secret:   str
+    email:    str
+    password: str
+    name:     str = "Admin"
+
+ADMIN_SETUP_SECRET = os.getenv("ADMIN_SETUP_SECRET", "MINDSPACE_SETUP_2026")
+
+@app.post("/api/setup/create-admin")
+def create_admin_account(req: CreateAdminRequest, db: Session = Depends(get_db)):
+    """
+    Tạo tài khoản admin lần đầu.
+    Cần đúng ADMIN_SETUP_SECRET (set trong Render env vars).
+    """
+    from db.crud import create_user, get_user_by_email
+
+    # Verify secret
+    if req.secret != ADMIN_SETUP_SECRET:
+        raise HTTPException(status_code=403, detail="Wrong setup secret")
+
+    # Validate email + password
+    if not _validate_email(req.email):
+        raise HTTPException(status_code=422, detail="Invalid email format")
+
+    ok, msg = _validate_password(req.password)
+    if not ok:
+        raise HTTPException(status_code=422, detail=msg)
+
+    # Check đã tồn tại chưa
+    existing = get_user_by_email(db, req.email.strip().lower())
+    if existing:
+        # Nếu đã tồn tại → đổi role thành admin (trường hợp đã đăng ký bình thường trước đó)
+        if existing.role != "admin":
+            existing.role = "admin"
+            db.commit()
+            return {
+                "status":  "upgraded_to_admin",
+                "user_id": existing.user_id,
+                "email":   existing.email,
+            }
+        return {
+            "status":  "already_exists",
+            "user_id": existing.user_id,
+            "email":   existing.email,
+        }
+
+    # Tạo admin mới
+    user = create_user(
+        db,
+        name=req.name.strip(),
+        email=req.email.strip().lower(),
+        password=req.password,
+        role="admin",
+    )
+
+    token = create_token(user.user_id, role="admin")
+    return {
+        "status":  "created",
+        "user_id": user.user_id,
+        "email":   user.email,
+        "token":   token,   # Trả về token luôn để test ngay
+    }
 
 
 # ============================================================
@@ -211,7 +365,7 @@ def backgrounds():
     if not os.path.exists(folder):
         return {"images": []}
     images = [f for f in os.listdir(folder)
-              if f.lower().endswith(('.jpg','.jpeg','.png','.webp'))]
+              if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))]
     return {"images": images}
 
 
@@ -221,7 +375,7 @@ def chat_backgrounds():
     if not os.path.exists(folder):
         return {"images": []}
     images = [f for f in os.listdir(folder)
-              if f.lower().endswith(('.jpg','.jpeg','.png','.webp'))]
+              if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp'))]
     return {"images": images}
 
 
@@ -231,12 +385,10 @@ def chat_backgrounds():
 
 @app.post("/api/start")
 def start(req: StartRequest, db: Session = Depends(get_db)):
-    from db.crud import get_recent_conversations, get_user, get_user_by_name
+    from db.crud import get_recent_conversations, get_user
 
-    stored_uid  = req.user_id
-    stored_user = get_user(db, stored_uid) if stored_uid else None
+    stored_user = get_user(db, req.user_id) if req.user_id else None
 
-    # Identity check — nếu có user_id cũ nhưng gửi tên khác
     identity_check    = False
     identity_question = None
 
@@ -248,18 +400,17 @@ def start(req: StartRequest, db: Session = Depends(get_db)):
                 f"or someone else using this device?"
             )
 
-    # Setup user + conversation
-    user, conv = _pipeline.setup_user(db, user_id=stored_uid, name=req.name)
+    user, conv = _pipeline.setup_user(db, user_id=req.user_id, name=req.name)
 
-    # Returning prompt
-    returning_prompt   = None
+    returning_prompt     = None
     prev_conversation_id = None
+
     if not identity_check:
-        recent = get_recent_conversations(db, user.user_id, limit=2)
+        recent     = get_recent_conversations(db, user.user_id, limit=2)
         prev_convs = [c for c in recent if c.conversation_id != conv.conversation_id]
         if prev_convs:
-            prev     = prev_convs[0]
-            prev_name = prev.name_conversation or "your last conversation"
+            prev                 = prev_convs[0]
+            prev_name            = prev.name_conversation or "your last conversation"
             returning_prompt     = (
                 f"Welcome back! Last time we talked about **{prev_name}**. "
                 f"Would you like to continue from where we left off?"
@@ -288,7 +439,7 @@ def confirm_identity(req: ConfirmIdentityRequest, db: Session = Depends(get_db))
     from db.crud import create_conversation, create_user, get_user
 
     if req.is_same_person:
-        user = get_user(db, req.user_id)
+        user     = get_user(db, req.user_id)
         greeting = _pipeline.get_greeting_if_returning(
             session=db, user_id=user.user_id, name=user.name
         ) or f"Good to see you again{', ' + user.name if user.name else ''}! How are you feeling today?"
@@ -317,6 +468,7 @@ def confirm_identity(req: ConfirmIdentityRequest, db: Session = Depends(get_db))
 @app.post("/api/chat")
 def chat(req: ChatRequest, db: Session = Depends(get_db)):
     from db.crud import update_conversation_emotion
+
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Empty message")
 
@@ -326,10 +478,8 @@ def chat(req: ChatRequest, db: Session = Depends(get_db)):
         conversation_id=req.conversation_id,
     )
 
-    # Update per-conversation emotion
-    emotion_analyzer = _pipeline._emotion_analyzer
     try:
-        emo = emotion_analyzer.analyze(req.message)
+        emo = _pipeline._emotion_analyzer.analyze(req.message)
         update_conversation_emotion(db, req.conversation_id, emo.scores)
     except Exception:
         pass
@@ -352,9 +502,9 @@ def chat(req: ChatRequest, db: Session = Depends(get_db)):
 def new_conversation(req: NewConvRequest, db: Session = Depends(get_db)):
     from db.crud import create_conversation, get_recent_conversations
 
-    conv    = create_conversation(db, user_id=req.user_id)
-    recent  = get_recent_conversations(db, req.user_id, limit=3)
-    prev    = [c for c in recent if c.conversation_id != conv.conversation_id]
+    conv   = create_conversation(db, user_id=req.user_id)
+    recent = get_recent_conversations(db, req.user_id, limit=3)
+    prev   = [c for c in recent if c.conversation_id != conv.conversation_id]
 
     returning_prompt     = None
     prev_conversation_id = None
@@ -401,7 +551,7 @@ def get_conversations(user_id: str, db: Session = Depends(get_db)):
 @app.get("/api/conversation/{conversation_id}/messages")
 def get_messages(conversation_id: str, db: Session = Depends(get_db)):
     from db.crud import get_recent_messages
-    msgs = list(reversed(get_recent_messages(db, conversation_id, limit=100)))
+    msgs   = list(reversed(get_recent_messages(db, conversation_id, limit=100)))
     result = []
     for m in msgs:
         if m.user_input:
@@ -448,23 +598,6 @@ def end_session(conversation_id: str, db: Session = Depends(get_db)):
     _pipeline.end_session(conversation_id)
     return {"status": "ended"}
 
-@app.post("/api/setup/create-admin")
-def create_admin_account(req: dict):
-    secret = req.get("secret", "")
-    if secret != "MINDSPACE_SETUP_2026":
-        raise HTTPException(status_code=403, detail="Wrong secret")
-    session = Session()
-    try:
-        email    = req.get("email", "Admin@gmail.com")
-        password = req.get("password", "Admin19!03")
-        name     = req.get("name", "Admin")
-        existing = get_user_by_email(session, email)
-        if existing:
-            return {"status": "already_exists", "user_id": existing.user_id}
-        user = create_user(session, name=name, email=email, password=password, role="admin")
-        return {"status": "created", "user_id": user.user_id}
-    finally:
-        session.close()
 
 # ============================================================
 # EMOTION
@@ -476,7 +609,7 @@ def emotion_conversation(conversation_id: str, db: Session = Depends(get_db)):
     ce = get_conversation_emotion(db, conversation_id)
     if not ce:
         return {"scores": {}, "dominant_emotion": None}
-    EMOTIONS = ["anger","disgust","fear","joy","sadness","surprise","trust","anticipation"]
+    EMOTIONS = ["anger", "disgust", "fear", "joy", "sadness", "surprise", "trust", "anticipation"]
     return {
         "scores":           {e: getattr(ce, e, 0.0) for e in EMOTIONS},
         "dominant_emotion": ce.dominant_emotion,
@@ -488,15 +621,6 @@ def emotion_conversation(conversation_id: str, db: Session = Depends(get_db)):
 # ADMIN ROUTES
 # ============================================================
 
-def require_admin(user_id: str = Depends(get_current_user),
-                  db: Session = Depends(get_db)):
-    from db.crud import get_user
-    user = get_user(db, user_id)
-    if not user or user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin only")
-    return user_id
-
-
 @app.get("/api/admin/stats")
 def admin_stats(admin: str = Depends(require_admin), db: Session = Depends(get_db)):
     from db.crud import (get_active_user_count, get_conversation_count,
@@ -504,10 +628,10 @@ def admin_stats(admin: str = Depends(require_admin), db: Session = Depends(get_d
     from db.models import Message
     crisis_count = db.query(Message).filter(Message.crisis_flagged == True).count()
     return {
-        "total_users":        get_user_count(db),
-        "active_users":       get_active_user_count(db),
+        "total_users":         get_user_count(db),
+        "active_users":        get_active_user_count(db),
         "total_conversations": get_conversation_count(db),
-        "crisis_messages":    crisis_count,
+        "crisis_messages":     crisis_count,
     }
 
 
@@ -516,22 +640,22 @@ def admin_users(limit: int = 200, admin: str = Depends(require_admin),
                 db: Session = Depends(get_db)):
     from db.crud import get_all_users
     from db.models import Conversation
-    users = get_all_users(db, limit=limit)
+    users  = get_all_users(db, limit=limit)
     result = []
     for u in users:
         conv_count = db.query(Conversation).filter(Conversation.user_id == u.user_id).count()
         result.append({
-            "user_id":           u.user_id,
-            "name":              u.name,
-            "email":             u.email,
-            "age":               u.age,
-            "gender":            u.gender,
-            "date_of_birth":     str(u.date_of_birth) if u.date_of_birth else None,
-            "is_active":         u.is_active,
-            "role":              u.role,
+            "user_id":            u.user_id,
+            "name":               u.name,
+            "email":              u.email,
+            "age":                u.age,
+            "gender":             u.gender,
+            "date_of_birth":      str(u.date_of_birth) if u.date_of_birth else None,
+            "is_active":          u.is_active,
+            "role":               u.role,
             "conversation_count": conv_count,
-            "created_at":        u.created_at.isoformat() if u.created_at else None,
-            "last_active":       u.last_active.isoformat() if u.last_active else None,
+            "created_at":         u.created_at.isoformat() if u.created_at else None,
+            "last_active":        u.last_active.isoformat() if u.last_active else None,
         })
     return result
 
@@ -554,20 +678,22 @@ def admin_user_detail(user_id: str, admin: str = Depends(require_admin),
     from db.crud import get_conversation_emotion, get_emotion_state, get_user
     from db.models import Conversation, Message
 
-    user  = get_user(db, user_id)
+    user = get_user(db, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    state   = get_emotion_state(db, user_id)
-    EMOTIONS = ["anger","disgust","fear","joy","sadness","surprise","trust","anticipation"]
+    state    = get_emotion_state(db, user_id)
+    EMOTIONS = ["anger", "disgust", "fear", "joy", "sadness", "surprise", "trust", "anticipation"]
 
-    convs = (db.query(Conversation).filter(Conversation.user_id == user_id)
-             .order_by(Conversation.started_at.desc()).all())
+    convs      = (db.query(Conversation).filter(Conversation.user_id == user_id)
+                  .order_by(Conversation.started_at.desc()).all())
     convs_data = []
     for c in convs:
         msg_count = db.query(Message).filter(Message.conversation_id == c.conversation_id).count()
-        crisis_c  = db.query(Message).filter(Message.conversation_id == c.conversation_id,
-                                              Message.crisis_flagged == True).count()
+        crisis_c  = db.query(Message).filter(
+            Message.conversation_id == c.conversation_id,
+            Message.crisis_flagged == True,
+        ).count()
         ce = get_conversation_emotion(db, c.conversation_id)
         convs_data.append({
             "conversation_id":   c.conversation_id,
@@ -581,20 +707,20 @@ def admin_user_detail(user_id: str, admin: str = Depends(require_admin),
         })
 
     return {
-        "user_id":      user.user_id,
-        "name":         user.name,
-        "email":        user.email,
-        "age":          user.age,
-        "gender":       user.gender,
-        "date_of_birth": str(user.date_of_birth) if user.date_of_birth else None,
-        "is_active":    user.is_active,
-        "created_at":   user.created_at.isoformat() if user.created_at else None,
-        "last_active":  user.last_active.isoformat() if user.last_active else None,
+        "user_id":        user.user_id,
+        "name":           user.name,
+        "email":          user.email,
+        "age":            user.age,
+        "gender":         user.gender,
+        "date_of_birth":  str(user.date_of_birth) if user.date_of_birth else None,
+        "is_active":      user.is_active,
+        "created_at":     user.created_at.isoformat() if user.created_at else None,
+        "last_active":    user.last_active.isoformat() if user.last_active else None,
         "global_emotion": {
-            "scores":       {e: getattr(state, e, 0.0) for e in EMOTIONS} if state else {},
-            "dominant":     state.dominant_emotion if state else None,
-            "turn_count":   state.turn_count if state else 0,
-            "crisis_flag":  state.crisis_flag if state else False,
+            "scores":      {e: getattr(state, e, 0.0) for e in EMOTIONS} if state else {},
+            "dominant":    state.dominant_emotion if state else None,
+            "turn_count":  state.turn_count if state else 0,
+            "crisis_flag": state.crisis_flag if state else False,
         },
         "conversations": convs_data,
     }
@@ -605,15 +731,17 @@ def admin_conversations(limit: int = 200, admin: str = Depends(require_admin),
                         db: Session = Depends(get_db)):
     from db.models import Conversation, ConversationEmotion, Message, User
 
-    convs = (db.query(Conversation)
-             .order_by(Conversation.started_at.desc())
-             .limit(limit).all())
+    convs  = (db.query(Conversation)
+              .order_by(Conversation.started_at.desc())
+              .limit(limit).all())
     result = []
     for c in convs:
         user      = db.query(User).filter(User.user_id == c.user_id).first()
         msg_count = db.query(Message).filter(Message.conversation_id == c.conversation_id).count()
-        crisis_c  = db.query(Message).filter(Message.conversation_id == c.conversation_id,
-                                              Message.crisis_flagged == True).count()
+        crisis_c  = db.query(Message).filter(
+            Message.conversation_id == c.conversation_id,
+            Message.crisis_flagged == True,
+        ).count()
         ce = db.query(ConversationEmotion).filter(
             ConversationEmotion.conversation_id == c.conversation_id
         ).first()
@@ -632,7 +760,7 @@ def admin_conversations(limit: int = 200, admin: str = Depends(require_admin),
 
 
 # ============================================================
-# HEALTH + STATIC FILES
+# HEALTH + STATIC
 # ============================================================
 
 @app.get("/health")
@@ -658,6 +786,7 @@ def root():
     if os.path.exists(f):
         return FileResponse(f)
     return {"status": "ok", "message": "MindSpace API running"}
+
 
 if __name__ == "__main__":
     import uvicorn
