@@ -449,36 +449,25 @@ def end_session(conversation_id: str, db: Session = Depends(get_db)):
     return {"status": "ended"}
 
 @app.post("/api/setup/create-admin")
-def create_admin_account(req: dict):
+def create_admin_account(req: dict, db: Session = Depends(get_db)):
+    # ↑ Thêm "db: Session = Depends(get_db)" vào đây
     secret = req.get("secret", "")
     if secret != "MINDSPACE_SETUP_2026":
         raise HTTPException(status_code=403, detail="Wrong secret")
-    session = Session()
-    try:
-        from db.crud import create_user, get_user_by_email
-        email    = req.get("email", "admin@mindspace.io")
-        password = req.get("password", "Admin123!")
-        name     = req.get("name", "Admin")
 
-        existing = get_user_by_email(session, email)
-        if existing:
-            # Nếu tồn tại, update role thành admin
-            existing.role = "admin"
-            session.commit()
-            return {"status": "updated_to_admin", "user_id": existing.user_id}
+    from db.crud import create_user, get_user_by_email
+    email    = req.get("email", "adminwoa@gmail.com")
+    password = req.get("password", "Asura19.03")
+    name     = req.get("name", "Admin_WoA")
 
-        user = create_user(
-            session,
-            name=name,
-            email=email,
-            password=password,
-            role="admin",
-        )
-        return {"status": "created", "user_id": user.user_id}
-    except Exception as e:
-        return {"status": "error", "detail": str(e)}
-    finally:
-        session.close()
+    existing = get_user_by_email(db, email)
+    if existing:
+        existing.role = "admin"
+        db.commit()
+        return {"status": "updated_to_admin", "user_id": existing.user_id}
+
+    user = create_user(db, name=name, email=email, password=password, role="admin")
+    return {"status": "created", "user_id": user.user_id}
 
 # ============================================================
 # EMOTION
