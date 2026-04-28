@@ -448,6 +448,23 @@ def end_session(conversation_id: str, db: Session = Depends(get_db)):
     _pipeline.end_session(conversation_id)
     return {"status": "ended"}
 
+@app.post("/api/setup/create-admin")
+def create_admin_account(req: dict):
+    secret = req.get("secret", "")
+    if secret != "MINDSPACE_SETUP_2026":
+        raise HTTPException(status_code=403, detail="Wrong secret")
+    session = Session()
+    try:
+        email    = req.get("email", "Admin@gmail.com")
+        password = req.get("password", "Admin19!03")
+        name     = req.get("name", "Admin")
+        existing = get_user_by_email(session, email)
+        if existing:
+            return {"status": "already_exists", "user_id": existing.user_id}
+        user = create_user(session, name=name, email=email, password=password, role="admin")
+        return {"status": "created", "user_id": user.user_id}
+    finally:
+        session.close()
 
 # ============================================================
 # EMOTION
