@@ -304,7 +304,10 @@ td.mono{font-family:var(--mono);font-size:.72rem;color:var(--text3)}
 
 <script>
 const API = '';
-let token    = localStorage.getItem('ms_admin_token');
+// Lấy token từ ms_admin_token, hoặc fallback về ms_token (từ index.html redirect)
+let token = localStorage.getItem('ms_admin_token') || localStorage.getItem('ms_token');
+// Đồng bộ lại để lần sau dùng đúng key
+if (token) localStorage.setItem('ms_admin_token', token);
 let adminUser = null;
 let allUsers  = [];
 let allConvs  = [];

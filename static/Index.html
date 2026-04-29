@@ -369,11 +369,11 @@ async function doLogin() {
 
     // Admin → redirect sang /admin
     if (data.role === 'admin') {
+      // Copy token sang key mà admin.html dùng
+      localStorage.setItem('ms_admin_token', authToken);
       window.location.href = '/admin';
       return;
-    }
-    afterAuth();
-  } catch { showErr('l-err', 'Connection error'); }
+  }
 }
 
 async function doRegister() {
@@ -439,6 +439,7 @@ if (authToken) {
     .then(r => r.json())
     .then(d => {
       if (d.role === 'admin') {
+        localStorage.setItem('ms_admin_token', authToken);
         window.location.href = '/admin';
         return;
       }
