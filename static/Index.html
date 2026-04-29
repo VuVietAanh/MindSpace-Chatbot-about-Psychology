@@ -369,11 +369,12 @@ async function doLogin() {
 
     // Admin → redirect sang /admin
     if (data.role === 'admin') {
-      // Copy token sang key mà admin.html dùng
-      localStorage.setItem('ms_admin_token', authToken);
+      localStorage.setItem('ms_admin_token', authToken);    
       window.location.href = '/admin';
       return;
-  }
+    }
+    afterAuth();
+  } catch { showErr('l-err', 'Connection error'); }
 }
 
 async function doRegister() {
@@ -439,7 +440,6 @@ if (authToken) {
     .then(r => r.json())
     .then(d => {
       if (d.role === 'admin') {
-        localStorage.setItem('ms_admin_token', authToken);
         window.location.href = '/admin';
         return;
       }
@@ -886,6 +886,24 @@ document.addEventListener('keydown', e => {
     document.getElementById('form-login').classList.contains('active') ? doLogin() : doRegister();
   }
 });
+
+// Expose tất cả functions ra global scope
+window.switchTab       = switchTab;
+window.doLogin         = doLogin;
+window.doRegister      = doRegister;
+window.startGuest      = startGuest;
+window.confirmIdentity = confirmIdentity;
+window.dismissReturning = dismissReturning;
+window.newConversation = newConversation;
+window.sendMessage     = sendMessage;
+window.toggleEmotionPanel = toggleEmotionPanel;
+window.loadEmotionPanel   = loadEmotionPanel;
+window.endSession      = endSession;
+window.openProfile     = openProfile;
+window.saveProfile     = saveProfile;
+window.closeModal      = closeModal;
+window.deleteConversation = deleteConversation;
+
 </script>
 </body>
 </html>
