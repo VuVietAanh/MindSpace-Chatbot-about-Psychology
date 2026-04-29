@@ -304,10 +304,8 @@ td.mono{font-family:var(--mono);font-size:.72rem;color:var(--text3)}
 
 <script>
 const API = '';
-// Lấy token từ ms_admin_token, hoặc fallback về ms_token (từ index.html redirect)
 let token = localStorage.getItem('ms_admin_token') || localStorage.getItem('ms_token');
-// Đồng bộ lại để lần sau dùng đúng key
-if (token) localStorage.setItem('ms_admin_token', token);
+
 let adminUser = null;
 let allUsers  = [];
 let allConvs  = [];
@@ -358,6 +356,7 @@ document.addEventListener('keydown', e => {
 
 function logout() {
   localStorage.removeItem('ms_admin_token');
+  localStorage.removeItem('ms_token');
   location.reload();
 }
 
@@ -367,16 +366,22 @@ function authHeaders() {
 
 // ── Init ──
 if (token) {
-  fetch(API + '/api/auth/me', {headers: authHeaders()})
+  fetch(API + '/api/auth/me', {headers: {'Authorization': 'Bearer ' + token}})
     .then(r => r.json())
     .then(d => {
       if (d.role === 'admin') {
         adminUser = d;
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('admin-name').textContent = d.name || 'Admin';
+        // Sync token
+        localStorage.setItem('ms_admin_token', token);
         loadAll();
-      } else { localStorage.removeItem('ms_admin_token'); }
-    }).catch(() => { localStorage.removeItem('ms_admin_token'); });
+      } else {
+        // Không phải admin → xóa token và hiện login
+        localStorage.removeItem('ms_admin_token');
+      }
+    })
+    .catch(() => localStorage.removeItem('ms_admin_token'));
 }
 
 async function loadAll() {
