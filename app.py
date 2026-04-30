@@ -131,31 +131,32 @@ def _validate_password(password: str) -> tuple[bool, str]:
 
 
 @app.post("/api/auth/register")
-def register(req: RegisterRequest):
-    session = Session()
-    try:
-        # Validate email format
-        if not _validate_email(req.email):
-            raise HTTPException(status_code=400, detail="Invalid email format")
+def register(req: RegisterRequest, db: Session = Depends(get_db)):
+    from db.crud import create_user, get_user_by_email
 
-        # Validate password strength
-        ok, msg = _validate_password(req.password)
-        if not ok:
-            raise HTTPException(status_code=400, detail=msg)
+    if not _validate_email(req.email):
+        raise HTTPException(status_code=400, detail="Invalid email format")
 
-        # Check email exists
-        if get_user_by_email(session, req.email):
-            raise HTTPException(status_code=400, detail="Email already registered")
+    ok, msg = _validate_password(req.password)
+    if not ok:
+        raise HTTPException(status_code=400, detail=msg)
 
-        user = create_user(
-            session, name=req.name, email=req.email, password=req.password,\
-            age=req.age, gender=req.gender, date_of_birth=req.date_of_birth,
-        )
-        token = create_token(user.user_id, user.role)
-        return AuthResponse(token=token, user_id=user.user_id,
-                            name=user.name, role=user.role)
-    finally:
-        session.close()
+    if get_user_by_email(db, req.email):
+        raise HTTPException(status_code=400, detail="Email already registered. Please use a different email.")
+
+    user = create_user(
+        db, name=req.name, email=req.email, password=req.password,
+        age=req.age, gender=req.gender,
+    )
+    token = secrets.token_hex(32)
+    _tokens[token] = user.user_id
+    return {
+        "token":   token,
+        "user_id": user.user_id,
+        "name":    user.name,
+        "email":   user.email,
+        "role":    user.role,
+    }
 
 
 @app.post("/api/auth/login")
