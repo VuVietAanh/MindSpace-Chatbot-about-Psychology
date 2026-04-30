@@ -146,17 +146,6 @@ td.mono{font-family:var(--mono);font-size:.72rem;color:var(--text3)}
 </head>
 <body>
 
-<div id="login-screen">
-  <div class="login-card">
-    <h1>MindSpace</h1>
-    <p>admin / console</p>
-    <div class="field"><label>Email</label><input type="email" id="login-email" placeholder="admin@mindspace.io" autocomplete="off"/></div>
-    <div class="field"><label>Password</label><input type="password" id="login-pass" placeholder="••••••••"/></div>
-    <button class="btn-login" onclick="doLogin()">Sign in →</button>
-    <div class="login-error" id="login-err">Invalid credentials</div>
-  </div>
-</div>
-
 <div id="overlay" onclick="closePanel()"></div>
 <div id="toast"></div>
 
@@ -328,36 +317,11 @@ function toast(msg) {
 }
 
 // ── Auth ──
-async function doLogin() {
-  const email = document.getElementById('login-email').value;
-  const pass  = document.getElementById('login-pass').value;
-  const err   = document.getElementById('login-err');
-  err.style.display = 'none';
-  try {
-    const res  = await fetch(API + '/api/auth/login', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({email, password: pass}),
-    });
-    const data = await res.json();
-    if (!res.ok) { err.textContent = data.detail || 'Login failed'; err.style.display = 'block'; return; }
-    if (data.role !== 'admin') { err.textContent = 'Not an admin account'; err.style.display = 'block'; return; }
-    token = data.token;
-    adminUser = data;
-    localStorage.setItem('ms_admin_token', token);
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('admin-name').textContent = data.name || 'Admin';
-    loadAll();
-  } catch { err.textContent = 'Connection error'; err.style.display = 'block'; }
-}
-
-document.addEventListener('keydown', e => {
-  if (e.key === 'Enter' && document.getElementById('login-screen').style.display !== 'none') doLogin();
-});
-
 function logout() {
   localStorage.removeItem('ms_admin_token');
   localStorage.removeItem('ms_token');
-  location.reload();
+  localStorage.removeItem('ms_uid');
+  window.location.href = '/';
 }
 
 function authHeaders() {
@@ -365,23 +329,28 @@ function authHeaders() {
 }
 
 // ── Init ──
-if (token) {
+if (!token) {
+  // Không có token → về trang chính để đăng nhập
+  window.location.href = '/';
+} else {
   fetch(API + '/api/auth/me', {headers: {'Authorization': 'Bearer ' + token}})
-    .then(r => r.json())
-    .then(d => {
-      if (d.role === 'admin') {
-        adminUser = d;
-        document.getElementById('login-screen').style.display = 'none';
-        document.getElementById('admin-name').textContent = d.name || 'Admin';
-        // Sync token
-        localStorage.setItem('ms_admin_token', token);
-        loadAll();
-      } else {
-        // Không phải admin → xóa token và hiện login
-        localStorage.removeItem('ms_admin_token');
-      }
-    })
-    .catch(() => localStorage.removeItem('ms_admin_token'));
+      .then(r => r.json())
+      .then(d => {
+          if (d.role === 'admin') {
+              adminUser = d;
+              document.getElementById('admin-name').textContent = d.name || 'Admin';
+              localStorage.setItem('ms_admin_token', token);
+              loadAll();
+          } else {
+              // Không phải admin → về trang chính
+              localStorage.removeItem('ms_admin_token');
+              window.location.href = '/';
+          }
+      })
+      .catch(() => {
+          localStorage.removeItem('ms_admin_token');
+          window.location.href = '/';
+      });
 }
 
 async function loadAll() {
